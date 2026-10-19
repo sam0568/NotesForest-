@@ -1,0 +1,2078 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#7fbf7a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='40' fill='%234f9d62'/%3E%3C/svg%3E">
+  <title>Notas ♡ — Tu pequeño mundo</title>
+  <meta name="description" content="Notas — leé mensajes sin esperas.">
+  <link rel="icon" type="image/png" href="tree.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    :root {
+      --ink: #2b4a3a;
+      --ink-soft: #5b7d68;
+      --forest: #2f6a47;
+      --leaf: #4f9d62;
+      --cream: #fffaf0;
+      --gold: #f2c14e;
+      --gold-deep: #c8901c;
+      --pink: #ff9fb8;
+      --yellow: #ffe77d;
+      --line: rgba(47, 106, 71, .16);
+      --font: "Nunito", system-ui, sans-serif;
+      --display: "Fredoka", system-ui, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      font-family: var(--font);
+      font-size: 15px;
+      background: #7fbf7a;
+      overflow-x: hidden;
+    }
+
+    ::selection { background: rgba(242, 193, 78, .55); }
+
+    button, input, textarea { font: inherit; }
+    button { cursor: pointer; }
+
+    button:focus-visible, a:focus-visible {
+      outline: 3px solid var(--gold-deep);
+      outline-offset: 3px;
+    }
+
+    /* ───────── Bosque soleado ───────── */
+    .world {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      overflow: hidden;
+      z-index: 0;
+      background:
+        radial-gradient(ellipse 55% 50% at 68% 28%, rgba(255, 246, 190, .75), transparent 72%),
+        radial-gradient(ellipse 40% 40% at 30% 65%, rgba(120, 190, 120, .5), transparent 72%),
+        linear-gradient(180deg, #cdebb0 0%, #92cc86 45%, #4f9d62 100%);
+    }
+
+    .world svg, .world canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Escena ilustrada de respaldo: se ve mientras carga el 3D (o si falla) */
+    .fallback {
+      position: absolute;
+      inset: 0;
+      transition: opacity 1.2s ease;
+    }
+
+    .world.scene-ready .fallback { opacity: 0; }
+
+    /* Escena 3D (scene.gltf): recibe el arrastre en las zonas libres de la página */
+    #scene3d {
+      pointer-events: auto;
+      cursor: grab;
+      opacity: 0;
+      transition: opacity 1.2s ease;
+    }
+
+    #scene3d.ready { opacity: 1; }
+    #scene3d:active { cursor: grabbing; }
+
+    .scene-hint {
+      position: fixed;
+      left: 18px;
+      bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+      z-index: 20;
+      padding: 10px 17px;
+      background: rgba(255, 250, 240, .94);
+      border: 2px solid white;
+      border-radius: 999px;
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 800;
+      box-shadow: 0 4px 0 rgba(47, 106, 71, .25);
+      opacity: 0;
+      transform: translateY(8px);
+      pointer-events: none;
+      transition: opacity .3s, transform .3s;
+    }
+
+    .scene-hint.show { opacity: 1; transform: none; }
+
+    @media (max-width: 740px) {
+      .scene-hint { bottom: calc(72px + env(safe-area-inset-bottom, 0px)); }
+    }
+
+    .shaft {
+      position: absolute;
+      top: -15%;
+      height: 130%;
+      background: linear-gradient(180deg, rgba(255, 252, 215, .55), rgba(255, 252, 215, 0) 78%);
+      filter: blur(14px);
+      mix-blend-mode: screen;
+      transform: rotate(15deg);
+      transform-origin: top center;
+    }
+
+    .shaft.a { left: 50%; width: 14vw; }
+    .shaft.b { left: 65%; width: 9vw; opacity: .75; }
+    .shaft.c { left: 80%; width: 12vw; opacity: .55; }
+
+    .vignette {
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(90deg, rgba(31, 84, 56, .72) 0%, rgba(31, 84, 56, .38) 32%, transparent 62%),
+        radial-gradient(ellipse 85% 80% at 62% 40%, transparent 45%, rgba(31, 84, 56, .38) 100%);
+    }
+
+    /* ───────── Estructura ───────── */
+    .shell {
+      position: relative;
+      z-index: 1;
+      width: min(1120px, 100%);
+      margin: auto;
+      padding: 24px 28px 48px;
+      pointer-events: none;
+    }
+
+    .shell .menu,
+    .shell .section-heading,
+    .shell .panel,
+    .shell .footer { pointer-events: auto; }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 15px;
+    }
+
+    .logo {
+      font-family: var(--display);
+      font-size: 30px;
+      font-weight: 700;
+      color: white;
+      letter-spacing: -.3px;
+      text-shadow: 0 3px 0 var(--forest);
+    }
+
+    .online {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255, 250, 240, .88);
+      border: 2px solid white;
+      padding: 8px 14px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--ink);
+      box-shadow: 0 3px 0 rgba(47, 106, 71, .18);
+    }
+
+    .dot {
+      width: 9px;
+      height: 9px;
+      background: #aab5a0;
+      border-radius: 50%;
+    }
+
+    .dot.good { background: #4bc995; }
+    .dot.bad { background: #f06e89; }
+
+    .eye { display: block; width: 100%; height: auto; }
+
+    /* ───────── Héroe: título + menú ───────── */
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr);
+      align-items: end;
+      gap: 40px;
+      min-height: min(76vh, 680px);
+      padding: 40px 0 70px;
+    }
+
+    h1 { margin: 0; font-weight: 400; }
+
+    .h1-top {
+      display: block;
+      font-family: var(--display);
+      font-weight: 600;
+      font-size: clamp(19px, 2.7vw, 32px);
+      letter-spacing: .04em;
+      color: white;
+      text-shadow: 0 3px 0 var(--forest);
+      margin-left: .2em;
+    }
+
+    .h1-big {
+      display: block;
+      font-family: var(--display);
+      font-weight: 700;
+      font-size: clamp(88px, 17vw, 196px);
+      line-height: .95;
+      letter-spacing: -.01em;
+      color: white;
+      text-shadow:
+        0 6px 0 #3f8a57,
+        0 12px 0 rgba(31, 74, 49, .4),
+        0 18px 40px rgba(31, 74, 49, .35);
+    }
+
+    .tagline {
+      margin: 14px 0 0 .3em;
+      font-family: var(--display);
+      font-weight: 500;
+      font-size: clamp(17px, 2.1vw, 24px);
+      color: white;
+      text-shadow: 0 2px 0 var(--forest);
+    }
+
+    .subtitle {
+      max-width: 36ch;
+      margin: 14px 0 0 .3em;
+      font-size: 16px;
+      line-height: 1.7;
+      font-weight: 700;
+      color: white;
+      text-shadow: 0 2px 0 rgba(31, 74, 49, .65);
+    }
+
+    .menu {
+      justify-self: end;
+      width: min(100%, 370px);
+      text-align: right;
+      background: rgba(31, 90, 60, .6);
+      -webkit-backdrop-filter: blur(8px);
+      backdrop-filter: blur(8px);
+      border: 2px solid rgba(255, 255, 255, .6);
+      border-radius: 26px;
+      padding: 18px 0 14px;
+      overflow: hidden;
+      box-shadow: 0 8px 0 rgba(31, 74, 49, .22);
+    }
+
+    .menu-item {
+      position: relative;
+      isolation: isolate;
+      display: block;
+      padding: 10px 26px 10px 72px;
+      color: white;
+      text-shadow: 0 2px 0 rgba(31, 74, 49, .5);
+      text-decoration: none;
+      font-family: var(--display);
+      font-weight: 500;
+      font-size: clamp(19px, 1.8vw, 22px);
+      outline: none;
+      transition: color .18s;
+    }
+
+    .menu-item::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      background: linear-gradient(90deg, #ffd96e, #f2c14e);
+      clip-path: polygon(18px 0, 100% 0, 100% 100%, 0 100%);
+      opacity: 0;
+      transition: opacity .18s;
+    }
+
+    .menu-item .eye {
+      position: absolute;
+      left: 28px;
+      top: 50%;
+      width: 28px;
+      translate: 0 -50%;
+      color: #8a5d0c;
+      opacity: 0;
+      transition: opacity .18s;
+    }
+
+    .menu-item.is-selected, .menu-item:hover, .menu-item:focus-visible {
+      color: #4a3305;
+      text-shadow: none;
+    }
+
+    .menu-item.is-selected::before, .menu-item.is-selected .eye,
+    .menu-item:hover::before, .menu-item:hover .eye,
+    .menu-item:focus-visible::before, .menu-item:focus-visible .eye { opacity: 1; }
+
+    .menu:has(.menu-item:hover, .menu-item:focus-visible)
+      .menu-item.is-selected:not(:hover):not(:focus-visible) {
+      color: white;
+      text-shadow: 0 2px 0 rgba(31, 74, 49, .5);
+    }
+
+    .menu:has(.menu-item:hover, .menu-item:focus-visible)
+      .menu-item.is-selected:not(:hover):not(:focus-visible)::before,
+    .menu:has(.menu-item:hover, .menu-item:focus-visible)
+      .menu-item.is-selected:not(:hover):not(:focus-visible) .eye { opacity: 0; }
+
+    .menu-rule {
+      border: 0;
+      border-top: 2px dashed rgba(255, 255, 255, .5);
+      margin: 14px 26px;
+    }
+
+    .prompts {
+      display: flex;
+      justify-content: flex-end;
+      gap: 22px;
+      padding: 0 26px;
+      font-size: 14px;
+      font-weight: 700;
+      color: rgba(255, 255, 255, .92);
+    }
+
+    .prompt {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: none;
+      border: 0;
+      padding: 4px 0;
+      color: inherit;
+    }
+
+    button.prompt:hover { color: white; text-decoration: underline; }
+
+    kbd {
+      display: inline-grid;
+      place-items: center;
+      width: 22px;
+      height: 22px;
+      border: 2px solid currentColor;
+      border-radius: 50%;
+      font: 800 11px var(--font);
+    }
+
+    /* ───────── Botón de música ───────── */
+    .music-fab {
+      position: fixed;
+      right: 18px;
+      bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 10px 17px;
+      background: rgba(255, 250, 240, .94);
+      border: 2px solid white;
+      border-radius: 999px;
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 800;
+      box-shadow: 0 4px 0 rgba(47, 106, 71, .25);
+      transition: transform .15s, box-shadow .15s;
+    }
+
+    .music-fab:hover { transform: translateY(2px); box-shadow: 0 2px 0 rgba(47, 106, 71, .25); }
+    .music-fab .music-state { color: var(--gold-deep); }
+
+    .eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 14px; }
+    .eq i { width: 3px; height: 4px; background: var(--gold-deep); border-radius: 2px; }
+
+    [data-state="on"] .eq i { animation: eq .9s ease-in-out infinite alternate; }
+    [data-state="on"] .eq i:nth-child(2) { animation-delay: -.3s; }
+    [data-state="on"] .eq i:nth-child(3) { animation-delay: -.6s; }
+
+    @keyframes eq { from { height: 4px; } to { height: 14px; } }
+
+    /* ───────── Secciones ───────── */
+    .section-heading {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      background: rgba(255, 250, 240, .9);
+      border: 3px solid white;
+      border-radius: 22px;
+      padding: 16px 22px;
+      margin-bottom: 22px;
+      box-shadow: 0 6px 0 rgba(47, 106, 71, .18);
+    }
+
+    h2 {
+      font-family: var(--display);
+      font-size: 28px;
+      margin: 0;
+      font-weight: 600;
+      color: var(--ink);
+    }
+
+    .section-heading p {
+      margin: 3px 0 0;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--ink-soft);
+    }
+
+    .counter {
+      border: 2px solid white;
+      background: var(--yellow);
+      border-radius: 999px;
+      padding: 8px 15px;
+      font-family: var(--display);
+      font-size: 14px;
+      font-weight: 600;
+      white-space: nowrap;
+      box-shadow: 0 3px 0 rgba(200, 144, 28, .35);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: .9fr 1.1fr;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .panel {
+      background: rgba(255, 250, 240, .94);
+      border: 3px solid white;
+      border-radius: 26px;
+      padding: 26px;
+      min-width: 0;
+      scroll-margin-top: 24px;
+      box-shadow: 0 9px 0 rgba(47, 106, 71, .2);
+    }
+
+    .panel-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 22px;
+      padding-bottom: 16px;
+      border-bottom: 2px dashed var(--line);
+    }
+
+    .panel-top h3 {
+      font-family: var(--display);
+      font-size: 23px;
+      margin: 0;
+      font-weight: 600;
+    }
+
+    .glyph {
+      display: grid;
+      place-items: center;
+      flex: none;
+      width: 44px;
+      height: 44px;
+      border: 2px solid white;
+      background: var(--pink);
+      box-shadow: 0 3px 0 #e49bb2;
+      border-radius: 15px;
+      font-size: 22px;
+      transform: rotate(5deg);
+    }
+
+    .glyph.sun { background: var(--yellow); box-shadow: 0 3px 0 #e4cc65; }
+
+    .field { margin-bottom: 16px; }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--ink-soft);
+    }
+
+    input, textarea {
+      display: block;
+      width: 100%;
+      border: 2px solid #d3e8c6;
+      background: #f6fbef;
+      color: var(--ink);
+      padding: 13px 15px;
+      border-radius: 15px;
+      font-size: 15px;
+      font-weight: 700;
+      transition: border-color .2s, background .2s;
+    }
+
+    input:focus, textarea:focus {
+      outline: none;
+      border-color: var(--leaf);
+      background: white;
+      box-shadow: 0 0 0 4px rgba(79, 157, 98, .18);
+    }
+
+    input::placeholder, textarea::placeholder { color: #9bb5a2; }
+
+    input[type="search"] { -webkit-appearance: none; appearance: none; }
+
+    textarea {
+      min-height: 160px;
+      resize: vertical;
+      line-height: 1.75;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 20px;
+    }
+
+    .btn {
+      border: 2px solid white;
+      border-radius: 999px;
+      padding: 12px 20px;
+      background: #e3f3d6;
+      color: var(--ink);
+      box-shadow: 0 4px 0 #b6d8a4;
+      font-size: 14px;
+      font-weight: 800;
+      transition: transform .15s, box-shadow .15s;
+    }
+
+    .btn:hover { transform: translateY(2px); box-shadow: 0 2px 0 #b6d8a4; }
+
+    .btn.primary {
+      background: var(--pink);
+      color: #6b2d47;
+      box-shadow: 0 4px 0 #df83a6;
+    }
+
+    .btn.primary:hover { box-shadow: 0 2px 0 #df83a6; }
+
+    .btn:disabled { opacity: .6; cursor: wait; }
+
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .search { flex: 1; min-width: 0; }
+
+    .notes-list {
+      display: grid;
+      gap: 13px;
+    }
+
+    .note {
+      border: 2px solid white;
+      border-radius: 20px;
+      padding: 17px 18px;
+      box-shadow: 0 5px 0 rgba(47, 106, 71, .12);
+      overflow-wrap: anywhere;
+      transition: transform .18s;
+    }
+
+    .note:nth-child(4n+1) { background: #fff0f5; }
+    .note:nth-child(4n+2) { background: #fff8d9; }
+    .note:nth-child(4n+3) { background: #e9f8ff; }
+    .note:nth-child(4n+4) { background: #f0eaff; }
+
+    .note:hover { transform: rotate(-.4deg) translateY(-2px); }
+
+    .note-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      gap: 10px;
+    }
+
+    .note h4 {
+      font-family: var(--display);
+      font-size: 19px;
+      line-height: 1.4;
+      margin: 0;
+      font-weight: 600;
+    }
+
+    .note time {
+      display: block;
+      color: var(--ink-soft);
+      font-size: 12px;
+      font-weight: 700;
+      margin-top: 3px;
+    }
+
+    .note-content {
+      font-size: 15px;
+      line-height: 1.75;
+      white-space: pre-wrap;
+      color: #3e5f4c;
+      margin: 12px 0 0;
+      font-weight: 600;
+    }
+
+    .note-actions {
+      display: flex;
+      gap: 8px;
+      border-top: 2px dashed rgba(47, 106, 71, .15);
+      padding-top: 12px;
+      margin-top: 14px;
+    }
+
+    .mini {
+      background: rgba(255, 255, 255, .8);
+      border: 2px solid white;
+      color: var(--ink);
+      border-radius: 999px;
+      padding: 6px 13px;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .mini:hover { background: white; }
+    .mini.delete { color: #b65b78; }
+
+    .empty {
+      border: 2px dashed #bcdcae;
+      border-radius: 22px;
+      background: #f4fbec;
+      text-align: center;
+      padding: 38px 18px;
+    }
+
+    .empty-icon { font-size: 36px; margin-bottom: 10px; }
+    .empty-icon:empty { display: none; }
+
+    .empty h4 {
+      font-family: var(--display);
+      font-size: 20px;
+      margin: 0 0 6px;
+    }
+
+    .empty p {
+      color: var(--ink-soft);
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.7;
+      margin: 0;
+    }
+
+    .message {
+      display: none;
+      border-radius: 14px;
+      padding: 11px 14px;
+      margin-top: 16px;
+      font-size: 14px;
+      font-weight: 800;
+      overflow-wrap: anywhere;
+    }
+
+    .message.show { display: block; }
+    .message.success { background: #e1f8e9; color: #2f6e49; }
+    .message.error { background: #ffeaed; color: #a33f61; }
+
+    .loading {
+      text-align: center;
+      padding: 32px 10px;
+      color: var(--ink-soft);
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 40px;
+      background: rgba(255, 250, 240, .9);
+      border: 3px solid white;
+      border-radius: 22px;
+      padding: 15px 22px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--ink-soft);
+      box-shadow: 0 5px 0 rgba(47, 106, 71, .16);
+    }
+
+    .footer strong { color: var(--ink); }
+
+    @media (max-width: 740px) {
+      .shell { padding: 18px 14px 90px; }
+      .hero { grid-template-columns: 1fr; gap: 34px; min-height: 0; padding: 54px 0 40px; }
+      .h1-big { font-size: clamp(84px, 26vw, 140px); }
+      .menu { justify-self: stretch; width: 100%; text-align: left; }
+      .prompts { justify-content: flex-start; }
+      .layout { grid-template-columns: 1fr; }
+      .panel { padding: 20px; }
+      .section-heading { flex-direction: column; align-items: flex-start; }
+      .section-heading h2 { font-size: 25px; }
+      .footer { flex-direction: column; text-align: center; }
+      input, textarea { font-size: 16px; }
+      .vignette {
+        background:
+          linear-gradient(180deg, rgba(31, 84, 56, .3) 0%, rgba(31, 84, 56, .6) 65%),
+          radial-gradient(ellipse 90% 70% at 60% 30%, transparent 45%, rgba(31, 84, 56, .35) 100%);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after {
+        animation: none !important;
+        transition: none !important;
+      }
+    }
+
+    /* ───────── Menú de inicio + cinemática ───────── */
+    html { -webkit-tap-highlight-color: transparent; }
+    button, a { touch-action: manipulation; }
+    body { min-height: 100dvh; }
+    #scene3d { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+    .fallback { transform: scale(var(--zoom, 1)); transform-origin: 50% 60%; will-change: transform; }
+
+    body:not(.entered) { height: 100dvh; overflow: hidden; }
+    body:not(.entered) .shell { visibility: hidden; }
+    body:not(.entered) .music-fab, body:not(.entered) .scene-hint { display: none; }
+    .entered .shell { animation: shellIn 1s .25s cubic-bezier(.2, .7, .2, 1) backwards; }
+    @keyframes shellIn { from { opacity: 0; transform: translateY(18px); } }
+    @keyframes rise { from { opacity: 0; transform: translateY(22px); } }
+
+    .logo { cursor: pointer; }
+
+    .start {
+      position: fixed; inset: 0; z-index: 60; overflow-y: auto;
+      display: grid; align-items: end;
+      background: linear-gradient(180deg, rgba(31, 84, 56, .05) 0%, rgba(31, 84, 56, .2) 45%, rgba(31, 84, 56, .74) 100%);
+      transition: opacity .5s, visibility 0s .5s;
+    }
+    .start.out { opacity: 0; visibility: hidden; pointer-events: none; }
+
+    .start-main {
+      display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr);
+      align-items: end; gap: 40px;
+      width: min(1120px, 100%); margin: auto;
+      padding: calc(24px + env(safe-area-inset-top, 0px)) 28px calc(44px + env(safe-area-inset-bottom, 0px));
+    }
+    .start .title-block, .start .menu { animation: rise .9s cubic-bezier(.2, .7, .2, 1) backwards; }
+    .start .menu { animation-delay: .3s; text-align: left; }
+    button.menu-item { width: 100%; background: none; border: 0; text-align: left; font-family: var(--display); }
+    .start-load {
+      margin: 14px 0 0 .3em; font-size: 13px; font-weight: 800; letter-spacing: .04em;
+      color: white; text-shadow: 0 2px 0 rgba(31, 74, 49, .65);
+    }
+    .start-note { margin: 0; padding: 0 26px; font-size: 13px; font-weight: 700; color: rgba(255, 255, 255, .92); }
+
+    .cine { position: fixed; inset: 0; z-index: 70; display: none; }
+    .cine.on { display: block; }
+    .cine .bar {
+      position: absolute; left: 0; right: 0; height: clamp(54px, 13vh, 120px);
+      background: #000; transition: transform .7s ease;
+    }
+    .cine .bar.top { top: 0; }
+    .cine .bar.bot { bottom: 0; }
+    .cine.on .bar.top { animation: barTop 1s .5s cubic-bezier(.2, .7, .2, 1) backwards; }
+    .cine.on .bar.bot { animation: barBot 1s .5s cubic-bezier(.2, .7, .2, 1) backwards; }
+    .cine.end .bar.top { transform: translateY(-100%); }
+    .cine.end .bar.bot { transform: translateY(100%); }
+    @keyframes barTop { from { transform: translateY(-100%); } }
+    @keyframes barBot { from { transform: translateY(100%); } }
+    .cine-fade { position: absolute; inset: 0; background: #000; opacity: 0; }
+    .cine.on .cine-fade { animation: blackIn 2s ease both; }
+    @keyframes blackIn { 0% { opacity: 0; } 28% { opacity: 1; } 100% { opacity: 0; } }
+    .cine-line {
+      position: absolute; left: 0; right: 0; margin: 0 auto; width: min(92%, 760px);
+      bottom: calc(clamp(54px, 13vh, 120px) + 7vh); text-align: center;
+      font-family: var(--display); font-weight: 600; font-size: clamp(26px, 5.4vw, 52px); line-height: 1.2;
+      color: white; text-shadow: 0 3px 0 var(--forest), 0 10px 36px rgba(31, 74, 49, .6);
+      opacity: 0; transform: translateY(14px); transition: opacity .9s, transform .9s;
+    }
+    .cine-line.show { opacity: 1; transform: none; }
+    .cine-skip {
+      position: absolute; z-index: 2; right: 16px; bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+      min-height: 44px; padding: 10px 18px; background: none; color: white;
+      border: 2px solid rgba(255, 255, 255, .7); border-radius: 999px; font-size: 13px; font-weight: 800;
+    }
+    .cine.on { pointer-events: auto; }
+
+    /* ───────── Optimización para celu ───────── */
+    @media (max-width: 740px) {
+      .shell { padding: calc(14px + env(safe-area-inset-top, 0px)) 14px calc(96px + env(safe-area-inset-bottom, 0px)); }
+      .logo { font-size: 26px; }
+      .online { padding: 7px 12px; font-size: 12px; }
+      .hero { min-height: calc(100dvh - 90px); align-content: end; padding: 24px 0 28px; gap: 26px; }
+      .h1-top { font-size: clamp(17px, 5vw, 22px); }
+      .subtitle { font-size: 15px; }
+      .menu { -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+      .menu-item { padding: 14px 22px 14px 66px; font-size: 20px; }
+      .music-fab { width: 50px; height: 50px; padding: 0; justify-content: center; right: 14px; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
+      .music-fab > span:last-child { display: none; }
+      .scene-hint { left: 14px; right: 78px; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); text-align: center; font-size: 12px; padding: 9px 14px; }
+      .btn { min-height: 44px; }
+      .actions .btn { flex: 1 1 auto; }
+      .mini { min-height: 40px; padding: 8px 15px; }
+      .note-actions .mini { flex: 1; }
+      textarea { min-height: 130px; }
+      .shaft { filter: blur(8px); }
+      .shaft.b, .shaft.c { display: none; }
+      .start-main { grid-template-columns: 1fr; align-content: space-between; min-height: 100dvh; gap: 28px; padding: calc(40px + env(safe-area-inset-top, 0px)) 16px calc(24px + env(safe-area-inset-bottom, 0px)); }
+      .start .menu { justify-self: stretch; width: 100%; }
+    }
+    @media (hover: none) {
+      .btn:hover, .music-fab:hover, .note:hover { transform: none; }
+      kbd, .prompts span.prompt { display: none; }
+    }
+    @media (max-height: 480px) and (orientation: landscape) {
+      .h1-big { font-size: clamp(60px, 18vh, 110px); }
+      .hero { min-height: 0; }
+      .start-main { min-height: 0; align-content: end; grid-template-columns: 1.2fr .8fr; }
+      .cine-line { font-size: clamp(20px, 4.4vw, 34px); bottom: calc(clamp(54px, 13vh, 120px) + 3vh); }
+    }
+  </style>
+</head>
+
+<body>
+  <audio id="bgm" src="sound.mp3" loop preload="auto"></audio>
+
+  <div class="world" aria-hidden="true">
+    <div class="fallback">
+    <svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
+      <defs>
+        <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="18"/>
+        </filter>
+        <pattern id="grass" width="60" height="64" patternUnits="userSpaceOnUse">
+          <path d="M5 64Q8 32 14 8Q15 38 20 64ZM25 64Q30 38 38 18Q36 44 40 64ZM44 64Q46 42 54 26Q52 48 56 64Z" fill="#2f6a47" opacity=".75"/>
+        </pattern>
+      </defs>
+
+      <!-- copas -->
+      <g filter="url(#soft)">
+        <ellipse cx="560" cy="-20" rx="520" ry="170" fill="#5fae6c" opacity=".9"/>
+        <ellipse cx="1100" cy="-30" rx="420" ry="150" fill="#7bc67f"/>
+        <ellipse cx="1450" cy="10" rx="330" ry="150" fill="#4f9d62" opacity=".9"/>
+        <ellipse cx="820" cy="100" rx="300" ry="100" fill="#b3e39a" opacity=".55"/>
+      </g>
+
+      <!-- arco de piedra con hiedra -->
+      <path d="M930 770V430Q1050 290 1170 430V770Z" fill="#d3e8b9"/>
+      <path d="M985 770V470Q1050 380 1115 470V770Z" fill="#5aa564"/>
+      <g fill="#5fae6c">
+        <circle cx="948" cy="430" r="26"/><circle cx="985" cy="372" r="24"/>
+        <circle cx="1050" cy="338" r="28"/><circle cx="1118" cy="372" r="24"/>
+        <circle cx="1152" cy="430" r="26"/>
+      </g>
+
+      <!-- troncos -->
+      <path d="M-20 0H230C250 300 215 620 245 900H-20Z" fill="#2f6a47"/>
+      <path d="M330 0H420C430 300 410 620 432 900H320Z" fill="#3f7f55" opacity=".85"/>
+      <path d="M1290 0H1340C1346 320 1328 620 1344 900H1280Z" fill="#3a7a52" opacity=".8"/>
+
+      <!-- colinas, estanque y flores -->
+      <path d="M0 760Q300 700 600 760T1200 750T1600 740V900H0Z" fill="#6fbb74"/>
+      <ellipse cx="980" cy="805" rx="300" ry="38" fill="#a9e3f2" opacity=".8"/>
+      <ellipse cx="960" cy="802" rx="170" ry="14" fill="none" stroke="white" stroke-width="3" opacity=".55"/>
+      <ellipse cx="1040" cy="815" rx="90" ry="8" fill="none" stroke="white" stroke-width="3" opacity=".45"/>
+      <path d="M0 830Q400 790 800 840T1600 820V900H0Z" fill="#4f9d62"/>
+      <g>
+        <circle cx="420" cy="800" r="7" fill="#ff9fb8"/><circle cx="470" cy="815" r="6" fill="#ffe77d"/>
+        <circle cx="560" cy="790" r="7" fill="white"/><circle cx="660" cy="820" r="6" fill="#ff9fb8"/>
+        <circle cx="1350" cy="780" r="7" fill="#ffe77d"/><circle cx="1420" cy="800" r="6" fill="white"/>
+        <circle cx="1500" cy="785" r="7" fill="#ff9fb8"/><circle cx="1290" cy="815" r="6" fill="#ff9fb8"/>
+        <circle cx="300" cy="840" r="6" fill="white"/><circle cx="740" cy="850" r="7" fill="#ffe77d"/>
+      </g>
+      <rect x="0" y="838" width="1600" height="62" fill="url(#grass)"/>
+    </svg>
+    </div>
+
+    <canvas id="scene3d"></canvas>
+
+    <div class="shaft a"></div>
+    <div class="shaft b"></div>
+    <div class="shaft c"></div>
+    <canvas id="motes"></canvas>
+    <div class="vignette"></div>
+  </div>
+
+  <button class="music-fab js-music" type="button" aria-pressed="false" aria-label="Música de fondo" data-state="off">
+    <span class="eq" aria-hidden="true"><i></i><i></i><i></i></span>
+    <span>Música: <span class="music-state">Apagada</span></span>
+  </button>
+
+  <div class="scene-hint" id="sceneHint" role="status" aria-live="polite">
+    <span id="sceneHintText"></span>
+  </div>
+
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="eyeIcon" viewBox="0 0 40 24"><path d="M2 12C8 4 14 2 20 2s12 2 18 10c-6 8-12 10-18 10S8 20 2 12Z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="20" cy="12" r="5" fill="currentColor"/></symbol></svg>
+
+  <section class="start" id="start" aria-label="Menú de inicio">
+    <div class="start-main">
+      <div class="title-block">
+        <div class="start-title">
+          <span class="h1-top">Tu pequeño mundo de</span>
+          <span class="h1-big">Notas</span>
+        </div>
+        <p class="tagline">Leé mensajes sin esperas ♡</p>
+        <p class="start-load" id="startLoad" role="status">Cargando el bosque…</p>
+      </div>
+      <nav class="menu" id="startMenu" aria-label="Menú de inicio">
+        <button class="menu-item is-selected" id="playBtn" type="button"><svg class="eye" viewBox="0 0 40 24" aria-hidden="true"><use href="#eyeIcon"/></svg>Comenzar ♡</button>
+        <button class="menu-item" id="directBtn" type="button"><svg class="eye" viewBox="0 0 40 24" aria-hidden="true"><use href="#eyeIcon"/></svg>Entrar directo</button>
+        <button class="menu-item js-music" type="button" aria-pressed="false" aria-label="Música de fondo" data-state="off"><svg class="eye" viewBox="0 0 40 24" aria-hidden="true"><use href="#eyeIcon"/></svg>Música: <span class="music-state">Apagada</span></button>
+        <hr class="menu-rule">
+        <p class="start-note">Mejor con auriculares</p>
+      </nav>
+    </div>
+  </section>
+
+  <div class="cine" id="cine" aria-hidden="true">
+    <i class="bar top"></i><i class="bar bot"></i>
+    <p class="cine-line" id="cineLine"></p>
+    <button class="cine-skip" id="cineSkip" type="button">Saltar ›</button>
+    <div class="cine-fade"></div>
+  </div>
+
+  <div class="shell">
+    <header>
+      <div class="logo" id="logoBtn" role="button" tabindex="0" aria-label="Volver al inicio">Notas ♡</div>
+      <div class="online">
+        <span class="dot" id="statusDot"></span>
+        <span id="statusText">conectando...</span>
+      </div>
+    </header>
+
+    <section class="hero">
+      <div class="title-block">
+        <h1>
+          <span class="h1-top">Tu pequeño mundo de</span>
+          <span class="h1-big">Notas</span>
+        </h1>
+        <p class="tagline">Leé mensajes sin esperas ♡</p>
+        <p class="subtitle">Un lugar para pensamientos, sorpresas y momentos.</p>
+      </div>
+
+      <nav class="menu" id="menu" aria-label="Secciones">
+        <a class="menu-item is-selected" href="#write">
+          <svg class="eye" viewBox="0 0 40 24" aria-hidden="true">
+            <path d="M2 12C8 4 14 2 20 2s12 2 18 10c-6 8-12 10-18 10S8 20 2 12Z" fill="none" stroke="currentColor" stroke-width="2"/>
+            <circle cx="20" cy="12" r="5" fill="currentColor"/>
+          </svg>
+          Escribir una nota
+        </a>
+        <a class="menu-item" href="#read">
+          <svg class="eye" viewBox="0 0 40 24" aria-hidden="true">
+            <path d="M2 12C8 4 14 2 20 2s12 2 18 10c-6 8-12 10-18 10S8 20 2 12Z" fill="none" stroke="currentColor" stroke-width="2"/>
+            <circle cx="20" cy="12" r="5" fill="currentColor"/>
+          </svg>
+          Leer notas
+        </a>
+        <hr class="menu-rule">
+        <div class="prompts">
+          <button class="prompt js-music" type="button" aria-pressed="false" aria-label="Música de fondo" data-state="off"><kbd>M</kbd> Música</button>
+          <span class="prompt"><kbd>↵</kbd> Elegir</span>
+        </div>
+      </nav>
+    </section>
+
+    <div class="section-heading">
+      <div>
+        <h2>Bienvenid@ al bosque</h2>
+        <p>Unas pocas palabras pueden cambiarlo todo.</p>
+      </div>
+      <div class="counter" id="noteCount">0 notas ♡</div>
+    </div>
+
+    <main class="layout">
+      <section class="panel" id="write">
+        <div class="panel-top">
+          <h3 id="formHeading">Crear una nota</h3>
+        </div>
+
+        <form id="noteForm">
+          <div class="field">
+            <label for="noteTitle">Ponele un nombre</label>
+            <input id="noteTitle" maxlength="150" placeholder="Una sorpresa..." type="text">
+          </div>
+
+          <div class="field">
+            <label for="noteContent">¿Qué tenés en la cabeza?</label>
+            <textarea id="noteContent" maxlength="10000" placeholder="Escribí algo lindo acá..." required></textarea>
+          </div>
+
+          <div class="actions">
+            <button class="btn primary" id="saveBtn" type="submit">Guardar nota ♡</button>
+            <button class="btn" id="cancelBtn" type="button" hidden>Cancelar</button>
+          </div>
+
+          <div class="message" id="formMessage" role="status" aria-live="polite"></div>
+        </form>
+      </section>
+
+      <section class="panel" id="read">
+        <div class="panel-top">
+          <h3>Mensajes</h3>
+        </div>
+
+        <div class="toolbar">
+          <input class="search" id="searchInput" type="search" placeholder="Buscar una nota..." aria-label="Buscar notas">
+          <button class="btn" id="refreshBtn" type="button" title="Actualizar" aria-label="Actualizar notas">↻</button>
+        </div>
+
+        <div class="notes-list" id="notesList" aria-live="polite">
+          <div class="loading">Juntando tus notas...</div>
+        </div>
+
+        <div class="message" id="listMessage" role="status" aria-live="polite"></div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span><strong>Notas ♡</strong> — leé mensajes sin esperas.</span>
+      <span>Hecho de cosas simples y sentimientos grandes ✦</span>
+    </footer>
+  </div>
+
+  <script>
+    // ───────── Luciérnagas / polen ─────────
+    (function () {
+      const canvas = document.getElementById("motes");
+      if (matchMedia("(prefers-reduced-motion: reduce)").matches) { canvas.remove(); return; }
+
+      const ctx = canvas.getContext("2d");
+      let w, h, motes = [];
+
+      const sprite = document.createElement("canvas");
+      sprite.width = sprite.height = 32;
+      const sctx = sprite.getContext("2d");
+      const g = sctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+      g.addColorStop(0, "rgba(255,255,235,1)");
+      g.addColorStop(.25, "rgba(255,240,170,.6)");
+      g.addColorStop(1, "rgba(255,235,150,0)");
+      sctx.fillStyle = g;
+      sctx.fillRect(0, 0, 32, 32);
+
+      function spawn(anywhere) {
+        return {
+          x: Math.random() * w,
+          y: anywhere ? Math.random() * h : h + 20,
+          r: 4 + Math.random() * 10,
+          vy: .08 + Math.random() * .22,
+          sway: 10 + Math.random() * 30,
+          ph: Math.random() * 6.28,
+          sp: .0004 + Math.random() * .0008,
+          a: .35 + Math.random() * .6
+        };
+      }
+
+      function resize() {
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        w = window.innerWidth;
+        h = window.innerHeight;
+        canvas.width = w * dpr;
+        canvas.height = h * dpr;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const count = Math.round(Math.min(70, Math.max(26, (w * h) / 26000)));
+        while (motes.length < count) motes.push(spawn(true));
+        motes.length = count;
+      }
+
+      function frame(t) {
+        ctx.clearRect(0, 0, w, h);
+        for (const m of motes) {
+          m.y -= m.vy;
+          const x = m.x + Math.sin(t * m.sp + m.ph) * m.sway;
+          const twinkle = .6 + .4 * Math.sin(t * .002 + m.ph * 3);
+          ctx.globalAlpha = m.a * twinkle;
+          ctx.drawImage(sprite, x - m.r, m.y - m.r, m.r * 2, m.r * 2);
+          if (m.y < -20) Object.assign(m, spawn(false));
+        }
+        requestAnimationFrame(frame);
+      }
+
+      window.addEventListener("resize", resize);
+      resize();
+      requestAnimationFrame(frame);
+    })();
+
+    // ───────── Música de fondo (sound.mp3) ─────────
+    (function () {
+      const MUSIC_VOLUME = 0.45;
+      const STORAGE_KEY = "notas-music";
+      const bgm = document.getElementById("bgm");
+      const toggles = document.querySelectorAll(".js-music");
+
+      let playing = false;
+      let broken = false;
+      let fadeRaf = 0;
+      let resumeOnShow = false;
+      let armed = false;
+
+      function savedPref() {
+        try { return localStorage.getItem(STORAGE_KEY); } catch (e) { return null; }
+      }
+      function savePref(value) {
+        try { localStorage.setItem(STORAGE_KEY, value); } catch (e) { /* ignore */ }
+      }
+
+      let wantsMusic = savedPref() !== "off";
+
+      function setUI(on) {
+        playing = on;
+        toggles.forEach(btn => {
+          btn.setAttribute("aria-pressed", String(on));
+          btn.dataset.state = on ? "on" : "off";
+          const label = btn.querySelector(".music-state");
+          if (label) label.textContent = broken ? "No disponible" : (on ? "Activada" : "Apagada");
+          btn.title = broken ? "No se pudo cargar sound.mp3" : "";
+        });
+      }
+
+      function fadeTo(target, ms, done) {
+        cancelAnimationFrame(fadeRaf);
+        const from = bgm.volume;
+        const t0 = performance.now();
+        (function step(now) {
+          const k = Math.min(1, (now - t0) / ms);
+          bgm.volume = Math.max(0, Math.min(1, from + (target - from) * k));
+          if (k < 1) fadeRaf = requestAnimationFrame(step);
+          else if (done) done();
+        })(t0);
+      }
+
+      async function start() {
+        if (broken) return false;
+        try {
+          bgm.volume = 0;
+          await bgm.play();
+          fadeTo(MUSIC_VOLUME, 1800);
+          setUI(true);
+          disarm();
+          return true;
+        } catch (e) {
+          setUI(false);
+          return false;
+        }
+      }
+
+      function stop() {
+        setUI(false);
+        fadeTo(0, 600, () => bgm.pause());
+      }
+
+      function toggle() {
+        if (playing) {
+          wantsMusic = false;
+          savePref("off");
+          stop();
+        } else {
+          wantsMusic = true;
+          savePref("on");
+          start();
+        }
+      }
+
+      // Los navegadores bloquean el autoplay: si falla, arranca con el primer click, tecla o toque.
+      function onFirstGesture(e) {
+        if (e.target.closest && e.target.closest(".js-music")) return;
+        if (e.type === "keydown" && (e.key === "m" || e.key === "M")) return;
+        disarm();
+        start().then(ok => { if (!ok && wantsMusic) arm(); });
+      }
+
+      function arm() {
+        if (armed) return;
+        armed = true;
+        ["click", "keydown", "touchend"].forEach(t => document.addEventListener(t, onFirstGesture));
+      }
+
+      function disarm() {
+        armed = false;
+        ["click", "keydown", "touchend"].forEach(t => document.removeEventListener(t, onFirstGesture));
+      }
+
+      bgm.addEventListener("error", () => {
+        broken = true;
+        setUI(false);
+        disarm();
+      });
+
+      toggles.forEach(btn => btn.addEventListener("click", toggle));
+
+      document.addEventListener("keydown", e => {
+        if (e.key !== "m" && e.key !== "M") return;
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        if (/^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
+        toggle();
+      });
+
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) {
+          resumeOnShow = !bgm.paused;
+          bgm.pause();
+        } else if (resumeOnShow) {
+          resumeOnShow = false;
+          bgm.play().catch(() => {});
+        }
+      });
+
+      setUI(false);
+      if (wantsMusic) start().then(ok => { if (!ok) arm(); });
+    })();
+
+    // ───────── Navegación del menú con teclado ─────────
+    (function () {
+      const menu = document.getElementById("menu");
+      const items = [...menu.querySelectorAll(".menu-item")];
+      menu.addEventListener("keydown", e => {
+        if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+        const i = items.indexOf(document.activeElement);
+        const next = e.key === "ArrowDown"
+          ? items[(i + 1) % items.length]
+          : items[(i - 1 + items.length) % items.length];
+        e.preventDefault();
+        next.focus();
+      });
+    })();
+
+    // ───────── CONFIG DE SUPABASE ─────────
+    const SUPABASE_URL =
+      "https://okfmewfevxlwsjzougiv.supabase.co";
+
+    const SUPABASE_KEY =
+      "sb_publishable_yXCvN7OJRun1fB0SWgKd9g_8jsdVG8E";
+
+    const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const noteForm = document.getElementById("noteForm");
+    const titleInput = document.getElementById("noteTitle");
+    const contentInput = document.getElementById("noteContent");
+    const notesList = document.getElementById("notesList");
+    const searchInput = document.getElementById("searchInput");
+    const noteCount = document.getElementById("noteCount");
+    const saveBtn = document.getElementById("saveBtn");
+    const cancelBtn = document.getElementById("cancelBtn");
+    const formHeading = document.getElementById("formHeading");
+    const formMessage = document.getElementById("formMessage");
+    const listMessage = document.getElementById("listMessage");
+    const statusDot = document.getElementById("statusDot");
+    const statusText = document.getElementById("statusText");
+    const refreshBtn = document.getElementById("refreshBtn");
+
+    let notes = [];
+    let editingId = null;
+    let busy = false;
+
+    function message(element, text, type) {
+      element.textContent = text;
+      element.className = "message show " + type;
+    }
+
+    function clearMessage(element) {
+      element.textContent = "";
+      element.className = "message";
+    }
+
+    function setStatus(ok, text) {
+      statusDot.className = "dot " + (ok ? "good" : "bad");
+      statusText.textContent = text;
+    }
+
+    function formatDate(value) {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return "";
+      return new Intl.DateTimeFormat("es-AR", {
+        month: "short", day: "numeric",
+        year: "numeric", hour: "numeric", minute: "2-digit"
+      }).format(date);
+    }
+
+    function setBusy(value) {
+      busy = value;
+      saveBtn.disabled = value;
+      refreshBtn.disabled = value;
+      saveBtn.textContent = value ? "Guardando tu nota..." :
+        (editingId ? "Guardar cambios ♡" : "Guardar nota ♡");
+    }
+
+    async function loadNotes() {
+      refreshBtn.disabled = true;
+
+      try {
+        const { data, error } = await db
+          .from("notes")
+          .select("id, title, content, created_at")
+          .order("created_at", { ascending: false });
+
+        if (error) throw error;
+
+        notes = data || [];
+        setStatus(true, "conectado ♡");
+        clearMessage(listMessage);
+        renderNotes();
+      } catch (error) {
+        console.error(error);
+        setStatus(false, "problema de conexión");
+
+        notesList.replaceChildren();
+
+        const empty = document.createElement("div");
+        empty.className = "empty";
+
+        const icon = document.createElement("div");
+        icon.className = "empty-icon";
+        icon.textContent = "";
+
+        const heading = document.createElement("h4");
+        heading.textContent = "No pudimos cargar tus notas.";
+
+        const paragraph = document.createElement("p");
+        paragraph.textContent = "Revisá la conexión con Supabase y la configuración de la tabla.";
+
+        empty.append(icon, heading, paragraph);
+        notesList.appendChild(empty);
+
+        message(listMessage, error.message, "error");
+      } finally {
+        refreshBtn.disabled = false;
+      }
+    }
+
+    function renderNotes() {
+      const query = searchInput.value.trim().toLowerCase();
+
+      const filtered = notes.filter(note =>
+        (note.title || "").toLowerCase().includes(query) ||
+        (note.content || "").toLowerCase().includes(query)
+      );
+
+      noteCount.textContent =
+        filtered.length + (filtered.length === 1 ? " nota ♡" : " notas ♡");
+
+      notesList.replaceChildren();
+
+      if (!filtered.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+
+        const icon = document.createElement("div");
+        icon.className = "empty-icon";
+        icon.textContent = query ? "": "";
+
+        const heading = document.createElement("h4");
+        heading.textContent = query ? "No encontramos notas." : "Un bosque esperando palabras.";
+
+        const paragraph = document.createElement("p");
+        paragraph.textContent = query
+          ? "Probá con otra búsqueda."
+          : "Tu primer mensaje podría vivir acá. ¡Creá uno!";
+
+        empty.append(icon, heading, paragraph);
+        notesList.appendChild(empty);
+        return;
+      }
+
+      filtered.forEach(note => {
+        const card = document.createElement("article");
+        card.className = "note";
+
+        const top = document.createElement("div");
+        top.className = "note-top";
+
+        const info = document.createElement("div");
+        const heading = document.createElement("h4");
+        heading.textContent = note.title?.trim() || "Un pensamiento ♡";
+
+        const time = document.createElement("time");
+        time.dateTime = note.created_at;
+        time.textContent = formatDate(note.created_at);
+
+        info.append(heading, time);
+        top.appendChild(info);
+
+        const content = document.createElement("p");
+        content.className = "note-content";
+        content.textContent = note.content;
+
+        const actions = document.createElement("div");
+        actions.className = "note-actions";
+
+        const edit = document.createElement("button");
+        edit.className = "mini";
+        edit.type = "button";
+        edit.textContent = "Editar";
+        edit.addEventListener("click", () => startEditing(note));
+
+        const remove = document.createElement("button");
+        remove.className = "mini delete";
+        remove.type = "button";
+        remove.textContent = "Borrar";
+        remove.addEventListener("click", () => deleteNote(note));
+
+        actions.append(edit, remove);
+        card.append(top, content, actions);
+        notesList.appendChild(card);
+      });
+    }
+
+    noteForm.addEventListener("submit", async event => {
+      event.preventDefault();
+      if (busy) return;
+
+      const title = titleInput.value.trim();
+      const content = contentInput.value.trim();
+
+      if (!content) {
+        message(formMessage, "¡Escribí algo primero! ♡", "error");
+        return;
+      }
+
+      if (title.length > 150 || content.length > 10000) {
+        message(formMessage, "Tu nota es demasiado larga.", "error");
+        return;
+      }
+
+      setBusy(true);
+      clearMessage(formMessage);
+
+      try {
+        let result;
+
+        if (editingId) {
+          result = await db.from("notes")
+            .update({ title, content })
+            .eq("id", editingId);
+        } else {
+          result = await db.from("notes")
+            .insert([{ title, content }]);
+        }
+
+        if (result.error) throw result.error;
+
+        message(
+          formMessage,
+          editingId ? "¡Cambios guardados!" : "¡Tu nota quedó guardada!",
+          "success"
+        );
+
+        resetForm();
+        await loadNotes();
+      } catch (error) {
+        console.error(error);
+        message(formMessage, "No se pudo guardar: " + error.message, "error");
+      } finally {
+        setBusy(false);
+      }
+    });
+
+    function startEditing(note) {
+      editingId = note.id;
+      titleInput.value = note.title || "";
+      contentInput.value = note.content || "";
+
+      formHeading.textContent = "Editá tu nota";
+      cancelBtn.hidden = false;
+      saveBtn.textContent = "Guardar cambios ♡";
+
+      clearMessage(formMessage);
+      document.getElementById("write").scrollIntoView({
+        behavior: "smooth", block: "start"
+      });
+      titleInput.focus();
+    }
+
+    function resetForm() {
+      editingId = null;
+      noteForm.reset();
+      formHeading.textContent = "Crear una nota";
+      cancelBtn.hidden = true;
+      saveBtn.textContent = "Guardar nota ♡";
+    }
+
+    cancelBtn.addEventListener("click", () => {
+      resetForm();
+      clearMessage(formMessage);
+    });
+
+    async function deleteNote(note) {
+      if (busy) return;
+
+      if (!confirm("¿Seguro que querés borrar esta nota?")) return;
+
+      setBusy(true);
+      clearMessage(listMessage);
+
+      try {
+        const { error } = await db.from("notes")
+          .delete()
+          .eq("id", note.id);
+
+        if (error) throw error;
+
+        if (editingId === note.id) resetForm();
+
+        message(listMessage, "Nota borrada ♡", "success");
+        await loadNotes();
+      } catch (error) {
+        console.error(error);
+        message(listMessage, "No se pudo borrar: " + error.message, "error");
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    searchInput.addEventListener("input", renderNotes);
+    refreshBtn.addEventListener("click", loadNotes);
+
+    loadNotes();
+
+    // Las actualizaciones en tiempo real requieren Realtime activado en public.notes.
+    db.channel("notes-live-updates")
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "notes"
+      }, () => loadNotes())
+      .subscribe(status => {
+        if (status === "SUBSCRIBED") {
+          setStatus(true, "en vivo y conectado ♡");
+        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.warn("Realtime no disponible; la actualización manual sigue funcionando.");
+        }
+      });
+  </script>
+
+  <script>
+    // ───────── Menú de inicio + cinemática ─────────
+    (function () {
+      const fx = window.sceneFX = { dolly: 0, yaw: 0, pitch: 0, fov: 0 };
+      const body = document.body, world = document.querySelector(".world");
+      const start = document.getElementById("start"), cine = document.getElementById("cine");
+      const line = document.getElementById("cineLine"), load = document.getElementById("startLoad");
+      const items = [...document.querySelectorAll("#startMenu .menu-item")];
+      const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const ease = p => 1 - Math.pow(1 - p, 3);
+
+      // [inicio ms, duración ms, texto]
+      const LINES = [
+        [1400, 2400, "Bienvenido al NotesForest"],
+        [4100, 3000, "Dejá una nota cuando te aburras,"],
+        [7400, 3200, "o simplemente tengas ganas de escribir algo."],
+        [10900, 3000, "Lo hice porque sos una persona con MUCHAS anécdotas."],
+        [14200, 3600, "Cuando no puedas grabar audios de lo que te pasó, podés escribirlo :)"],
+        [18100, 3000, "De paso... yo también voy a agregar las mías."]
+      ];
+      const TOTAL = 21600;
+      const FROM = { dolly: -0.5, yaw: 0.55, pitch: 0.32, fov: 18 };
+      let raf = 0, t0 = 0, skipAt = 0, skipFrom = null, curE = 0, shown = -1, running = false;
+
+      // ── estado de carga del 3D ──
+      let sceneDone = false;
+      const waiters = [];
+      addEventListener("scene:progress", e => { if (!sceneDone) load.textContent = "Cargando el bosque… " + e.detail + "%"; });
+      ["scene:ready", "scene:error"].forEach(n => addEventListener(n, () => {
+        sceneDone = true;
+        load.textContent = n === "scene:ready" ? "Bosque listo ✦" : "";
+        waiters.splice(0).forEach(f => f());
+      }));
+      const whenScene = () => sceneDone ? Promise.resolve() : new Promise(r => { waiters.push(r); setTimeout(r, 6000); });
+
+      // e: 0 = pose inicial de la cámara, 1 = reposo
+      function apply(e) {
+        for (const k in FROM) fx[k] = FROM[k] * (1 - e);
+        world.style.setProperty("--zoom", (1 + 0.22 * (1 - e)).toFixed(4));
+      }
+
+      function enter() {
+        body.classList.add("entered");
+        start.classList.add("out");
+        scrollTo(0, 0);
+        if (window.showSceneHint) window.showSceneHint();
+      }
+
+      function finish() {
+        cancelAnimationFrame(raf);
+        running = false;
+        apply(1);
+        line.classList.remove("show");
+        cine.classList.add("end");
+        enter();
+        setTimeout(() => cine.classList.remove("on", "end"), 900);
+      }
+
+      function frame(now) {
+        let e, done = false;
+        if (skipFrom === null) {
+          const el = now - t0;
+          e = ease(Math.min(1, el / (TOTAL - 600)));
+          const i = LINES.findIndex(l => el >= l[0] && el < l[0] + l[1]);
+          if (i !== shown) {
+            shown = i;
+            if (i >= 0) { line.textContent = LINES[i][2]; line.classList.add("show"); }
+            else line.classList.remove("show");
+          }
+          done = el >= TOTAL;
+        } else {
+          const k = Math.min(1, (now - skipAt) / 700);
+          e = skipFrom + (1 - skipFrom) * ease(k);
+          done = k >= 1;
+        }
+        curE = e;
+        apply(e);
+        if (done) return finish();
+        raf = requestAnimationFrame(frame);
+      }
+
+      async function play() {
+        if (running) return;
+        running = true;
+        if (reduce) { running = false; return enter(); }
+        if (!sceneDone) { load.textContent = "Preparando el bosque…"; await whenScene(); }
+        skipFrom = null; shown = -1; curE = 0;
+        start.classList.add("out");
+        cine.classList.remove("end");
+        cine.classList.add("on");
+        apply(0);
+        t0 = performance.now();
+        raf = requestAnimationFrame(frame);
+      }
+
+      function skip() {
+        if (!running || skipFrom !== null) return;
+        skipFrom = curE;
+        skipAt = performance.now();
+        line.classList.remove("show");
+      }
+
+      function openStart() {
+        if (running) return;
+        body.classList.remove("entered");
+        start.classList.remove("out");
+        apply(1);
+        scrollTo(0, 0);
+      }
+
+      document.getElementById("playBtn").addEventListener("click", play);
+      document.getElementById("directBtn").addEventListener("click", () => { apply(1); enter(); });
+      document.getElementById("cineSkip").addEventListener("click", skip);
+      addEventListener("keydown", e => { if (e.key === "Escape") skip(); });
+
+      const logo = document.getElementById("logoBtn");
+      logo.addEventListener("click", openStart);
+      logo.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openStart(); } });
+
+      // teclado en el menú de inicio
+      items.forEach(it => it.addEventListener("focus", () => items.forEach(x => x.classList.toggle("is-selected", x === it))));
+      document.getElementById("startMenu").addEventListener("keydown", e => {
+        if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+        const i = items.indexOf(document.activeElement);
+        e.preventDefault();
+        items[(i + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length].focus();
+      });
+
+      apply(1);
+    })();
+  </script>
+
+  <!-- ───────── Escena 3D (scene.gltf) ───────── -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module">
+    import * as THREE from "three";
+    import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+    import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
+    import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
+    import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+
+    // ───────── Ajustes (si algo no te cierra, tocá estos valores) ─────────
+    const SCENE_URL = "scene.gltf";
+    const EYE_HEIGHT = 2.3;       // altura de los ojos; null = automática según el tamaño de la escena
+    const EYE_RATIO = 0.06;       // si EYE_HEIGHT es null: ojos = tamaño de la escena × esto (subilo si se ve gigante)
+    const START_POSITION = [0.02, 4.08];  // [x, z] de inicio; null = centro de la escena
+    const START_YAW_DEG = 1;      // hacia dónde mira al entrar (grados)
+    const FOV = 72;               // campo de visión
+    const LOOK_SPEED = 0.0034;    // sensibilidad al arrastrar
+    const WALK_SPEED = 1.8;       // velocidad al caminar (alturas de ojos por segundo)
+
+    const canvas = document.getElementById("scene3d");
+    const world = document.querySelector(".world");
+    const hint = document.getElementById("sceneHint");
+    const hintText = document.getElementById("sceneHintText");
+    const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const coarsePointer = matchMedia("(pointer: coarse)").matches;
+    let hintTimer = 0;
+
+    function showHint(text, hideAfter) {
+      hintText.textContent = text;
+      hint.classList.add("show");
+      clearTimeout(hintTimer);
+      if (hideAfter) hintTimer = setTimeout(() => hint.classList.remove("show"), hideAfter);
+    }
+
+    function init() {
+      let renderer;
+      try {
+        renderer = new THREE.WebGLRenderer({
+          canvas, antialias: !coarsePointer, alpha: true, powerPreference: "high-performance"
+        });
+      } catch (err) {
+        console.warn("WebGL no disponible, se queda el fondo ilustrado:", err);
+        window.dispatchEvent(new CustomEvent("scene:error"));
+        return;
+      }
+
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, coarsePointer ? 1.5 : 2));
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 0.95;
+
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(FOV, 1, 0.05, 1000);
+      camera.rotation.order = "YXZ";
+
+      // Luz base por si la escena no trae la suya
+      const pmrem = new THREE.PMREMGenerator(renderer);
+      scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+      scene.add(new THREE.HemisphereLight(0xfff6d6, 0x4f9d62, 0.9));
+      const sun = new THREE.DirectionalLight(0xfff1c9, 2);
+      scene.add(sun, sun.target);
+
+      const fx = window.sceneFX || { dolly: 0, yaw: 0, pitch: 0, fov: 0 };
+      let baseFov = FOV, lastW = 0, lastH = 0;
+      function resize() {
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        // en el celu la barra del navegador cambia la altura al scrollear: no redimensionar por eso
+        if (coarsePointer && w === lastW && Math.abs(h - lastH) < 160) return;
+        lastW = w; lastH = h;
+        renderer.setSize(w, h, false);
+        camera.aspect = w / h;
+        // en vertical se abre el campo de visión para no ver "por un tubo"
+        baseFov = w / h < 1 ? Math.min(100, FOV + (1 - w / h) * 45) : FOV;
+        camera.fov = baseFov;
+        camera.updateProjectionMatrix();
+      }
+      window.addEventListener("resize", resize);
+      resize();
+
+      // ───────── Estado de la cámara en primera persona ─────────
+      const state = {
+        x: 0, z: 0,
+        groundY: 0, groundCur: 0,
+        eye: 1.6,
+        yaw: THREE.MathUtils.degToRad(START_YAW_DEG),
+        pitch: 0,
+        yawVel: 0, pitchVel: 0,
+        parX: 0, parY: 0, parTX: 0, parTY: 0
+      };
+      let ready = false;
+      let bounds = null;
+      let groundMeshes = [];
+      let lastCheck = { x: 0, z: 0 };
+
+      const raycaster = new THREE.Raycaster();
+      const DOWN = new THREE.Vector3(0, -1, 0);
+      const origin = new THREE.Vector3();
+      const normal = new THREE.Vector3();
+      let rayTop = 0;
+      let rayLength = 1;
+
+      // Altura del piso en (x, z). Con refY elige el piso más cercano a esa altura
+      // (así no se sube a las copas ni se cae al fondo del río); sin refY, el más bajo.
+      function findGround(x, z, refY) {
+        origin.set(x, rayTop, z);
+        raycaster.set(origin, DOWN);
+        raycaster.far = rayLength;
+        const hits = raycaster.intersectObjects(groundMeshes, false);
+        let best = null;
+        for (const h of hits) {
+          if (!h.face) continue;
+          normal.copy(h.face.normal).transformDirection(h.object.matrixWorld);
+          if (normal.y < 0.3) continue;
+          const y = h.point.y;
+          if (refY == null) {
+            if (best === null || y < best) best = y;
+          } else if (Math.abs(y - refY) <= state.eye * 1.2) {
+            if (best === null || Math.abs(y - refY) < Math.abs(best - refY)) best = y;
+          }
+        }
+        return best;
+      }
+
+      function enterScene(root) {
+        root.updateMatrixWorld(true);
+
+        const box = new THREE.Box3().setFromObject(root);
+        const size = box.getSize(new THREE.Vector3());
+        const center = box.getCenter(new THREE.Vector3());
+        const diag = size.length() || 1;
+
+        state.diag = diag;
+        state.eye = EYE_HEIGHT ?? diag * EYE_RATIO;
+        bounds = {
+          minX: box.min.x + diag * 0.02, maxX: box.max.x - diag * 0.02,
+          minZ: box.min.z + diag * 0.02, maxZ: box.max.z - diag * 0.02
+        };
+        rayTop = box.max.y + diag * 0.01;
+        rayLength = size.y + diag * 0.02;
+
+        // Piso: todas las mallas salvo las gigantes que envuelven la escena (cielos, domos)
+        const all = [];
+        root.traverse(o => {
+          if (!o.isMesh || !o.visible) return;
+          all.push(o);
+          const s = new THREE.Box3().setFromObject(o).getSize(new THREE.Vector3());
+          if (s.x >= size.x * 0.9 && s.y >= size.y * 0.9 && s.z >= size.z * 0.9) return;
+          groundMeshes.push(o);
+        });
+        if (!groundMeshes.length) groundMeshes = all;
+
+        // Punto de inicio
+        let sx = center.x, sz = center.z;
+        if (START_POSITION) { sx = START_POSITION[0]; sz = START_POSITION[1]; }
+        let g = findGround(sx, sz, null);
+        if (g === null) {
+          search:
+          for (const r of [0.05, 0.1, 0.2, 0.3]) {
+            for (let i = 0; i < 8; i++) {
+              const a = (i / 8) * Math.PI * 2;
+              const x = center.x + Math.cos(a) * size.x * r;
+              const z = center.z + Math.sin(a) * size.z * r;
+              g = findGround(x, z, null);
+              if (g !== null) { sx = x; sz = z; break search; }
+            }
+          }
+        }
+        if (g === null) g = center.y;
+
+        state.x = sx; state.z = sz;
+        state.groundY = state.groundCur = g;
+        lastCheck = { x: sx, z: sz };
+
+        camera.near = Math.max(state.eye * 0.05, 0.01);
+        camera.far = diag * 3;
+        camera.updateProjectionMatrix();
+
+        // Niebla suave: da profundidad y sensación de estar dentro
+        scene.fog = new THREE.Fog(0xd5edbf, diag * 0.04, diag * 0.6);
+
+        sun.position.set(center.x + diag * 0.5, center.y + diag * 0.8, center.z + diag * 0.4);
+        sun.target.position.copy(center);
+
+        ready = true;
+      }
+
+      // ───────── Mirar alrededor: arrastrar ─────────
+      let dragging = false, lastX = 0, lastY = 0;
+
+      canvas.style.touchAction = "pan-y"; // en el celu, vertical = scroll, horizontal = mirar
+      canvas.addEventListener("contextmenu", e => e.preventDefault());
+      let holdTimer = 0, downX = 0, downY = 0;
+      // celu: mantener el dedo quieto = caminar hacia adelante (se puede seguir mirando mientras tanto)
+      const stopHold = () => { clearTimeout(holdTimer); holdTimer = 0; keys.delete("w"); };
+      canvas.addEventListener("pointerdown", e => {
+        downX = e.clientX; downY = e.clientY;
+        dragging = true;
+        lastX = e.clientX; lastY = e.clientY;
+        state.yawVel = state.pitchVel = 0;
+        canvas.setPointerCapture(e.pointerId);
+        hint.classList.remove("show");
+      });
+      canvas.addEventListener("pointermove", e => {
+        if (!dragging) return;
+        if (holdTimer && Math.hypot(e.clientX - downX, e.clientY - downY) > 10) stopHold();
+        const dx = e.clientX - lastX, dy = e.clientY - lastY;
+        lastX = e.clientX; lastY = e.clientY;
+        state.yawVel = dx * LOOK_SPEED;
+        state.pitchVel = dy * LOOK_SPEED;
+        state.yaw += state.yawVel;
+        state.pitch += state.pitchVel;
+      });
+      const endDrag = () => { dragging = false; stopHold(); };
+      canvas.addEventListener("pointerup", endDrag);
+      canvas.addEventListener("pointercancel", endDrag);
+      canvas.addEventListener("lostpointercapture", endDrag);
+
+      // Parallax suave con el mouse (solo mouse, y sin "reducir movimiento")
+      if (!reduceMotion && !coarsePointer) {
+        window.addEventListener("pointermove", e => {
+          if (e.pointerType !== "mouse") return;
+          state.parTX = -((e.clientX / window.innerWidth) - 0.5) * 2 * 0.05;
+          state.parTY = -((e.clientY / window.innerHeight) - 0.5) * 2 * 0.03;
+        });
+      }
+
+      // ───────── Caminar: W A S D ─────────
+      const keys = new Set();
+      function typing(e) {
+        const t = e.target;
+        return t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable);
+      }
+      window.addEventListener("keydown", e => {
+        if (e.ctrlKey || e.metaKey || e.altKey || typing(e)) return;
+        const k = e.key.toLowerCase();
+        if (k === "w" || k === "a" || k === "s" || k === "d") {
+          keys.add(k);
+          hint.classList.remove("show");
+        } else if ((k === "r" || k === "f") && ready) {
+          // R sube la altura de los ojos (la escena se ve más chica), F la baja
+          state.eye *= k === "r" ? 1.15 : 1 / 1.15;
+          camera.near = Math.max(state.eye * 0.05, 0.01);
+          camera.updateProjectionMatrix();
+          showHint("Altura de ojos: " + state.eye.toFixed(2) + " · P para guardarla ✦", 3000);
+        } else if (k === "p" && ready) {
+          const deg = Math.round(THREE.MathUtils.radToDeg(state.yaw));
+          console.info(
+            "START_POSITION = [" + state.x.toFixed(2) + ", " + state.z.toFixed(2) + "];  " +
+            "START_YAW_DEG = " + deg + ";  // EYE_HEIGHT = " + state.eye.toFixed(2)
+          );
+          showHint("Posición guardada en la consola (F12) ✦", 4000);
+        }
+      });
+      window.addEventListener("keyup", e => keys.delete(e.key.toLowerCase()));
+      window.addEventListener("blur", () => keys.clear());
+      document.addEventListener("visibilitychange", () => keys.clear());
+
+      function walk(dt) {
+        const forward = (keys.has("w") ? 1 : 0) - (keys.has("s") ? 1 : 0);
+        const strafe = (keys.has("d") ? 1 : 0) - (keys.has("a") ? 1 : 0);
+        if (!forward && !strafe) return;
+
+        const len = Math.hypot(forward, strafe);
+        const step = state.eye * WALK_SPEED * dt / len;
+        const sin = Math.sin(state.yaw), cos = Math.cos(state.yaw);
+        // adelante = (-sin, -cos), derecha = (cos, -sin)
+        let nx = state.x + (-sin * forward + cos * strafe) * step;
+        let nz = state.z + (-cos * forward - sin * strafe) * step;
+        nx = THREE.MathUtils.clamp(nx, bounds.minX, bounds.maxX);
+        nz = THREE.MathUtils.clamp(nz, bounds.minZ, bounds.maxZ);
+
+        // Cada tanto se revisa el piso: si hay una pared o un hueco, no se avanza
+        if (Math.hypot(nx - lastCheck.x, nz - lastCheck.z) >= state.eye * 0.12) {
+          const g = findGround(nx, nz, state.groundY);
+          if (g === null) return;
+          state.groundY = g;
+          lastCheck = { x: nx, z: nz };
+        }
+        state.x = nx;
+        state.z = nz;
+      }
+
+      // ───────── Bucle de render ─────────
+      const clock = new THREE.Clock();
+      let time = 0;
+      let intro = 0;
+      const INTRO_SECONDS = reduceMotion ? 0 : 2.6;
+      let mixer = null;
+
+      function tick() {
+        const dt = Math.min(clock.getDelta(), 0.1);
+        time += dt;
+        if (mixer) mixer.update(dt);
+
+        if (ready) {
+          // inercia al soltar
+          if (!dragging) {
+            state.yaw += state.yawVel * dt * 60;
+            state.pitch += state.pitchVel * dt * 60;
+            const damp = Math.exp(-dt * 5);
+            state.yawVel *= damp;
+            state.pitchVel *= damp;
+          }
+          state.pitch = THREE.MathUtils.clamp(state.pitch, -1.25, 1.25);
+
+          walk(dt);
+          state.groundCur += (state.groundY - state.groundCur) * Math.min(1, dt * 8);
+
+          const k = Math.min(1, dt * 3);
+          state.parX += (state.parTX - state.parX) * k;
+          state.parY += (state.parTY - state.parY) * k;
+
+          // respiración sutil, como si estuvieras parado ahí
+          const sway = reduceMotion ? 0 : 1;
+          const dl = fx.dolly * state.eye; // travelling de la cinemática de entrada
+          camera.position.set(
+            state.x - Math.sin(state.yaw) * dl,
+            state.groundCur + state.eye + Math.sin(time * 1.1) * state.eye * 0.008 * sway,
+            state.z - Math.cos(state.yaw) * dl
+          );
+          camera.rotation.set(
+            state.pitch + fx.pitch + state.parY + Math.sin(time * 0.35) * 0.006 * sway,
+            state.yaw + fx.yaw + state.parX + Math.sin(time * 0.23) * 0.01 * sway,
+            0
+          );
+
+          const fov = baseFov + fx.fov;
+          if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
+        }
+
+        renderer.render(scene, camera);
+      }
+
+      // ───────── Carga de scene.gltf ─────────
+      const draco = new DRACOLoader();
+      draco.setDecoderPath("https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/draco/gltf/");
+      const loader = new GLTFLoader();
+      loader.setDRACOLoader(draco);
+      loader.setMeshoptDecoder(MeshoptDecoder);
+
+      showHint("Cargando escena 3D…");
+
+      loader.load(
+        SCENE_URL,
+        gltf => {
+          scene.add(gltf.scene);
+          enterScene(gltf.scene);
+
+          if (gltf.animations.length && !reduceMotion) {
+            mixer = new THREE.AnimationMixer(gltf.scene);
+            gltf.animations.forEach(clip => mixer.clipAction(clip).play());
+          }
+
+          canvas.classList.add("ready");
+          world.classList.add("scene-ready");
+          window.showSceneHint = () => {};
+          hint.classList.remove("show");
+          if (document.body.classList.contains("entered")) window.showSceneHint();
+
+          clock.getDelta();
+          renderer.setAnimationLoop(tick);
+          window.dispatchEvent(new CustomEvent("scene:ready"));
+        },
+        xhr => {
+          if (xhr.lengthComputable && xhr.total) {
+            const pct = Math.round((xhr.loaded / xhr.total) * 100);
+            showHint("Cargando escena 3D… " + pct + "%");
+            window.dispatchEvent(new CustomEvent("scene:progress", { detail: pct }));
+          }
+        },
+        err => {
+          console.error("No se pudo cargar " + SCENE_URL, err);
+          window.dispatchEvent(new CustomEvent("scene:error"));
+          showHint(
+            location.protocol === "file:"
+              ? "Abrí la página desde un servidor local para ver la escena 3D"
+              : "No se pudo cargar " + SCENE_URL,
+            12000
+          );
+        }
+      );
+    }
+
+    init();
+  </script>
+</body>
+</html>
